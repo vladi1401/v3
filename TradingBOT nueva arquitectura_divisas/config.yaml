@@ -1,0 +1,62 @@
+# -------------------------------------
+# CONFIGURACIÓN DEL ROBOT DE TRADING
+# -------------------------------------
+
+# Credenciales (NO ALMACENAR AQUÍ - USAR VARIABLES DE ENTORNO)
+mt5_credentials:
+  default_login: null
+  default_pass: null
+  default_server: null
+
+# Configuración del Bot y Mercado
+trading:
+  ticker: 'EURUSD'
+  interval_mt5: "TIMEFRAME_M1"
+  interval_str: "M1"  # Para nombre de archivo CSV
+  pip_value: 0.0001 # Valor de 1 pip para EURUSD
+  mt5_timeframe: 1 # Corresponde a TIMEFRAME_M1 (en minutos)
+
+# Gestión de Riesgo
+risk_management:
+  risk_per_trade_percent: 0.5 # % del equity a arriesgar
+  atr_period_sl_tp: 14       # Período ATR para SL/TP
+  sl_atr_multiplier: 2.0     # SL = PrecioEntrada -/+ (2.0 * ATR)
+  tp_atr_multiplier: 4.0     # TP = PrecioEntrada +/- (4.0 * ATR)
+
+# Configuración del Entorno y Agente de RL
+rl_params:
+  # Parámetros del Entorno
+  balance_inicial: 10000
+  spread_cost_pips: 1.5
+  slippage_pips: 0.2
+  reward_type: "sharpe"
+  sharpe_risk_free_rate: 0.0
+  reward_history_window: 252
+
+  # Configuración de Datos y Entrenamiento
+  training_years: [2020, 2021, 2022]
+  validation_years: [2023]
+  test_years: [2024]
+  csv_data_path: "csv_data" # Ruta a tus archivos CSV locales
+  norm_stats_path: "normalization_stats.json"
+
+  # Configuración de Optuna
+  optuna_n_trials: 100
+  optuna_study_name: "ppo_forex_study"
+  optuna_storage_db: "sqlite:///optuna_study.db"
+
+  # Parámetros del Agente (Stable-Baselines3)
+  algorithm: "PPO"
+  policy: "MlpPolicy"
+  total_timesteps: 5000000 # Para reentrenamiento final
+  optimization_timesteps: 500000 # Por trial de Optuna
+  model_save_path: "rl_forex_model_ppo_optimized.zip"
+  tensorboard_log: "./tensorboard_logs_ppo_optimized/"
+
+# Configuración de Características (Features)
+features:
+  ema_window: 20
+  rsi_window: 14
+  atr_window: 14
+  momentum_windows: [30, 60, 120, 240, 480]
+  cols_to_normalize: ['ema_spread', 'atr'] # Momentum se añaden dinámicamente

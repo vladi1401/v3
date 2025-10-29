@@ -1,0 +1,149 @@
+2025-10-24 13:54:41,080 - root - INFO - Logging configurado.
+2025-10-24 13:54:41,091 - __main__ - CRITICAL - Error al leer 'config.yaml': 'charmap' codec can't decode byte 0x8d in position 156: character maps to <undefined>
+Traceback (most recent call last):
+  File "c:\Users\andre\Desktop\BOT\TradingBOT nueva arquitectura\train_rl.py", line 37, in <module>
+    config = yaml.safe_load(f)
+             ^^^^^^^^^^^^^^^^^
+  File "C:\Users\andre\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\yaml\__init__.py", line 125, in safe_load
+    return load(stream, SafeLoader)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andre\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\yaml\__init__.py", line 79, in load
+    loader = Loader(stream)
+             ^^^^^^^^^^^^^^
+  File "C:\Users\andre\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\yaml\loader.py", line 34, in __init__
+    Reader.__init__(self, stream)
+  File "C:\Users\andre\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\yaml\reader.py", line 85, in __init__
+    self.determine_encoding()
+  File "C:\Users\andre\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\yaml\reader.py", line 124, in determine_encoding
+    self.update_raw()
+  File "C:\Users\andre\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\yaml\reader.py", line 178, in update_raw
+    data = self.stream.read(size)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\encodings\cp1252.py", line 23, in decode
+    return codecs.charmap_decode(input,self.errors,decoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeDecodeError: 'charmap' codec can't decode byte 0x8d in position 156: character maps to <undefined>
+2025-10-25 11:52:56,258 - root - INFO - Logging configurado.
+2025-10-25 11:52:56,266 - __main__ - CRITICAL - Error al leer 'config.yaml': 'charmap' codec can't decode byte 0x8d in position 156: character maps to <undefined>
+Traceback (most recent call last):
+  File "c:\Users\andre\Desktop\BOT\TradingBOT nueva arquitectura\train_rl.py", line 37, in <module>
+    config = yaml.safe_load(f)
+             ^^^^^^^^^^^^^^^^^
+  File "C:\Users\andre\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\yaml\__init__.py", line 125, in safe_load
+    return load(stream, SafeLoader)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andre\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\yaml\__init__.py", line 79, in load
+    loader = Loader(stream)
+             ^^^^^^^^^^^^^^
+  File "C:\Users\andre\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\yaml\loader.py", line 34, in __init__
+    Reader.__init__(self, stream)
+  File "C:\Users\andre\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\yaml\reader.py", line 85, in __init__
+    self.determine_encoding()
+  File "C:\Users\andre\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\yaml\reader.py", line 124, in determine_encoding
+    self.update_raw()
+  File "C:\Users\andre\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\yaml\reader.py", line 178, in update_raw
+    data = self.stream.read(size)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2544.0_x64__qbz5n2kfra8p0\Lib\encodings\cp1252.py", line 23, in decode
+    return codecs.charmap_decode(input,self.errors,decoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeDecodeError: 'charmap' codec can't decode byte 0x8d in position 156: character maps to <undefined>
+2025-10-25 11:55:45,188 - root - INFO - Logging configurado.
+2025-10-25 11:55:45,191 - __main__ - INFO - Configuración 'config.yaml' cargada.
+2025-10-25 11:55:45,211 - rl_core.rl_processor - CRITICAL - Error fatal al conectar RLProcessor a MT5: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+Traceback (most recent call last):
+  File "c:\Users\andre\Desktop\BOT\TradingBOT nueva arquitectura\rl_core\rl_processor.py", line 42, in __init__
+    login = int(mt5_cfg['default_login'])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+2025-10-25 11:55:45,212 - __main__ - CRITICAL - Fallo al cargar/procesar datos: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+Traceback (most recent call last):
+  File "c:\Users\andre\Desktop\BOT\TradingBOT nueva arquitectura\train_rl.py", line 54, in load_data
+    processor = RLProcessor(config)
+                ^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\andre\Desktop\BOT\TradingBOT nueva arquitectura\rl_core\rl_processor.py", line 42, in __init__
+    login = int(mt5_cfg['default_login'])
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+2025-10-25 11:57:04,257 - root - INFO - Logging configurado.
+2025-10-25 11:57:04,265 - __main__ - INFO - Configuración 'config.yaml' cargada.
+2025-10-25 11:57:04,265 - rl_core.rl_processor - CRITICAL - ¡ERROR DE CREDENCIALES FALTANTES!
+2025-10-25 11:57:04,265 - rl_core.rl_processor - CRITICAL - RLProcessor (train_rl.py) necesita acceso a MT5 para descargar datos.
+2025-10-25 11:57:04,265 - rl_core.rl_processor - CRITICAL - Por favor, configura las variables de entorno MT5_LOGIN, MT5_PASS, y MT5_SERVER.
+2025-10-25 11:57:04,265 - rl_core.rl_processor - CRITICAL - Error al leer credenciales de entorno: Variables de entorno MT5 no configuradas.. MT5_LOGIN debe ser un número.
+2025-10-25 11:57:04,265 - __main__ - CRITICAL - Fallo al cargar/procesar datos: Variables de entorno MT5 no configuradas.
+Traceback (most recent call last):
+  File "c:\Users\andre\Desktop\BOT\TradingBOT nueva arquitectura\train_rl.py", line 54, in load_data
+    processor = RLProcessor(config)
+                ^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\andre\Desktop\BOT\TradingBOT nueva arquitectura\rl_core\rl_processor.py", line 50, in __init__
+    raise ValueError("Variables de entorno MT5 no configuradas.")
+ValueError: Variables de entorno MT5 no configuradas.
+2025-10-25 11:57:57,826 - root - INFO - Logging configurado.
+2025-10-25 11:57:57,826 - __main__ - INFO - Configuración 'config.yaml' cargada.
+2025-10-25 11:57:57,826 - rl_core.rl_processor - CRITICAL - ¡ERROR DE CREDENCIALES FALTANTES!
+2025-10-25 11:57:57,826 - rl_core.rl_processor - CRITICAL - RLProcessor (train_rl.py) necesita acceso a MT5 para descargar datos.
+2025-10-25 11:57:57,826 - rl_core.rl_processor - CRITICAL - Por favor, configura las variables de entorno MT5_LOGIN, MT5_PASS, y MT5_SERVER.
+2025-10-25 11:57:57,826 - rl_core.rl_processor - CRITICAL - Error al leer credenciales de entorno: Variables de entorno MT5 no configuradas.. MT5_LOGIN debe ser un número.
+2025-10-25 11:57:57,826 - __main__ - CRITICAL - Fallo al cargar/procesar datos: Variables de entorno MT5 no configuradas.
+Traceback (most recent call last):
+  File "c:\Users\andre\Desktop\BOT\TradingBOT nueva arquitectura\train_rl.py", line 54, in load_data
+    processor = RLProcessor(config)
+                ^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\andre\Desktop\BOT\TradingBOT nueva arquitectura\rl_core\rl_processor.py", line 50, in __init__
+    raise ValueError("Variables de entorno MT5 no configuradas.")
+ValueError: Variables de entorno MT5 no configuradas.
+2025-10-25 11:58:57,777 - root - INFO - Logging configurado.
+2025-10-25 11:58:57,783 - __main__ - INFO - Configuración 'config.yaml' cargada.
+2025-10-25 11:58:57,787 - rl_core.rl_processor - CRITICAL - ¡ERROR DE CREDENCIALES FALTANTES!
+2025-10-25 11:58:57,787 - rl_core.rl_processor - CRITICAL - RLProcessor (train_rl.py) necesita acceso a MT5 para descargar datos.
+2025-10-25 11:58:57,787 - rl_core.rl_processor - CRITICAL - Por favor, configura las variables de entorno MT5_LOGIN, MT5_PASS, y MT5_SERVER.
+2025-10-25 11:58:57,788 - rl_core.rl_processor - CRITICAL - Error al leer credenciales de entorno: Variables de entorno MT5 no configuradas.. MT5_LOGIN debe ser un número.
+2025-10-25 11:58:57,788 - __main__ - CRITICAL - Fallo al cargar/procesar datos: Variables de entorno MT5 no configuradas.
+Traceback (most recent call last):
+  File "c:\Users\andre\Desktop\BOT\TradingBOT nueva arquitectura\train_rl.py", line 54, in load_data
+    processor = RLProcessor(config)
+                ^^^^^^^^^^^^^^^^^^^
+  File "c:\Users\andre\Desktop\BOT\TradingBOT nueva arquitectura\rl_core\rl_processor.py", line 50, in __init__
+    raise ValueError("Variables de entorno MT5 no configuradas.")
+ValueError: Variables de entorno MT5 no configuradas.
+2025-10-25 12:18:19,302 - root - INFO - Logging configurado.
+2025-10-25 12:18:19,317 - __main__ - INFO - Configuración 'config.yaml' cargada.
+2025-10-25 12:18:19,319 - rl_core.rl_processor - INFO - RLProcessor inicializado. Cargando datos desde: csv_data
+2025-10-25 12:18:19,319 - __main__ - INFO - Cargando y procesando datos de entrenamiento ([2020, 2021, 2022])...
+2025-10-25 12:18:19,319 - rl_core.rl_processor - INFO - Cargando datos locales desde: csv_data\EURUSD_M1_2020.csv...
+2025-10-25 12:18:19,320 - rl_core.rl_processor - WARNING - No se encontró el archivo: csv_data\EURUSD_M1_2020.csv. Saltando año 2020.
+2025-10-25 12:18:19,321 - rl_core.rl_processor - INFO - Cargando datos locales desde: csv_data\EURUSD_M1_2021.csv...
+2025-10-25 12:18:19,321 - rl_core.rl_processor - WARNING - No se encontró el archivo: csv_data\EURUSD_M1_2021.csv. Saltando año 2021.
+2025-10-25 12:18:19,321 - rl_core.rl_processor - INFO - Cargando datos locales desde: csv_data\EURUSD_M1_2022.csv...
+2025-10-25 12:18:19,321 - rl_core.rl_processor - WARNING - No se encontró el archivo: csv_data\EURUSD_M1_2022.csv. Saltando año 2022.
+2025-10-25 12:18:19,321 - rl_core.rl_processor - INFO - RLProcessor (modo CSV) finalizado.
+2025-10-25 12:18:19,323 - __main__ - INFO - RLProcessor (modo CSV) finalizado.
+2025-10-25 12:19:49,636 - root - INFO - Logging configurado.
+2025-10-25 12:19:49,640 - __main__ - INFO - Configuración 'config.yaml' cargada.
+2025-10-25 12:19:49,641 - rl_core.rl_processor - INFO - RLProcessor inicializado. Cargando datos desde: csv_data
+2025-10-25 12:19:49,643 - __main__ - INFO - Cargando y procesando datos de entrenamiento ([2020, 2021, 2022])...
+2025-10-25 12:19:49,643 - rl_core.rl_processor - INFO - Cargando datos locales desde: csv_data\EURUSD_M1_2020.csv...
+2025-10-25 12:19:49,643 - rl_core.rl_processor - WARNING - No se encontró el archivo: csv_data\EURUSD_M1_2020.csv. Saltando año 2020.
+2025-10-25 12:19:49,643 - rl_core.rl_processor - INFO - Cargando datos locales desde: csv_data\EURUSD_M1_2021.csv...
+2025-10-25 12:19:49,643 - rl_core.rl_processor - WARNING - No se encontró el archivo: csv_data\EURUSD_M1_2021.csv. Saltando año 2021.
+2025-10-25 12:19:49,643 - rl_core.rl_processor - INFO - Cargando datos locales desde: csv_data\EURUSD_M1_2022.csv...
+2025-10-25 12:19:49,643 - rl_core.rl_processor - WARNING - No se encontró el archivo: csv_data\EURUSD_M1_2022.csv. Saltando año 2022.
+2025-10-25 12:19:49,645 - __main__ - CRITICAL - Fallo al cargar/procesar datos CSV: No se pudieron cargar datos CSV válidos para ningún año en la lista: [2020, 2021, 2022]. Verifica la ruta 'csv_data' y los nombres/contenido de los archivos (Ej: EURUSD_M1_2020.csv con columnas 'time', 'open', 'high', 'low', 'close')
+2025-10-25 12:19:49,645 - rl_core.rl_processor - INFO - RLProcessor (modo CSV) finalizado.
+2025-10-25 12:19:49,645 - rl_core.rl_processor - INFO - RLProcessor (modo CSV) finalizado.
+2025-10-25 12:19:49,645 - __main__ - INFO - RLProcessor (modo CSV) finalizado.
+2025-10-25 12:24:38,366 - root - INFO - Logging configurado.
+2025-10-25 12:24:38,366 - __main__ - INFO - Configuración 'config.yaml' cargada.
+2025-10-25 12:24:38,366 - rl_core.rl_processor - INFO - RLProcessor inicializado. Cargando datos desde: csv_data
+2025-10-25 12:24:38,366 - __main__ - INFO - Cargando y procesando datos de entrenamiento ([2020, 2021, 2022])...
+2025-10-25 12:24:38,366 - rl_core.rl_processor - INFO - Cargando datos locales desde: csv_data\EURUSD_M1_2020.csv...
+2025-10-25 12:24:38,366 - rl_core.rl_processor - WARNING - No se encontró el archivo: csv_data\EURUSD_M1_2020.csv. Saltando año 2020.
+2025-10-25 12:24:38,378 - rl_core.rl_processor - INFO - Cargando datos locales desde: csv_data\EURUSD_M1_2021.csv...
+2025-10-25 12:24:38,378 - rl_core.rl_processor - WARNING - No se encontró el archivo: csv_data\EURUSD_M1_2021.csv. Saltando año 2021.
+2025-10-25 12:24:38,378 - rl_core.rl_processor - INFO - Cargando datos locales desde: csv_data\EURUSD_M1_2022.csv...
+2025-10-25 12:24:38,378 - rl_core.rl_processor - WARNING - No se encontró el archivo: csv_data\EURUSD_M1_2022.csv. Saltando año 2022.
+2025-10-25 12:24:38,378 - __main__ - CRITICAL - Fallo al cargar/procesar datos CSV: No se pudieron cargar datos CSV válidos para ningún año en la lista: [2020, 2021, 2022]. Verifica la ruta 'csv_data' y los nombres/contenido de los archivos (Ej: EURUSD_M1_2020.csv con columnas 'time', 'open', 'high', 'low', 'close')
+2025-10-25 12:24:38,379 - rl_core.rl_processor - INFO - RLProcessor (modo CSV) finalizado.
+2025-10-25 12:24:38,379 - rl_core.rl_processor - INFO - RLProcessor (modo CSV) finalizado.
+2025-10-25 12:24:38,379 - __main__ - INFO - RLProcessor (modo CSV) finalizado.
