@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import warnings
 import optuna
-from stable_baselines3.common.evaluation import evaluate_policy
+# DEPRECADO: from stable_baselines3.common.evaluation import evaluate_policy
 from typing import Dict, Any
 
 # --- 1. Configuración de Path y Logging ---
@@ -18,11 +18,13 @@ if dir_path not in sys.path:
 
 try:
     from pyrobot.utils import setup_logging
-    # --- CORRECCIÓN: Añadir import DataError ---
     from pyrobot.exceptions import DataError
     from rl_core.rl_processor import RLProcessor
     from rl_core.rl_environment import TradingEnv
     from rl_core.rl_agent import RLAgent
+    # --- NUEVO: Importar el backtester de portfolio ---
+    from backtester import run_portfolio_backtest, calculate_stats
+
 except ImportError as e:
     print(f"Error al importar módulos: {e}")
     print("Asegúrate de que todos los archivos (rl_processor, rl_environment, etc.) existen y no hay errores de sintaxis.")
@@ -46,6 +48,44 @@ df_train = pd.DataFrame()
 df_val = pd.DataFrame()
 processor = None
 
+# --- NUEVA FUNCIÓN AUXILIAR ---
+def apply_train_stats_to_df(df_raw: pd.DataFrame, stats: Dict, config: Dict) -> pd.DataFrame:
+    """Aplica estadísticas de normalización pre-calculadas a un DataFrame."""
+    logger.info("Aplicando estadísticas de normalización de TRAIN a datos...")
+    if not stats:
+         logger.warning("No se encontraron estadísticas (norm_stats). Los datos no se normalizarán.")
+         return df_raw.copy()
+
+    features_config = config['features']
+    cols_to_norm = features_config.get('cols_to_normalize', [])
+    momentum_cols = [f'momentum_{w}' for w in features_config.get('momentum_windows', [])]
+    all_cols_to_norm = cols_to_norm + momentum_cols
+    df_norm = df_raw.copy()
+
+    for col in all_cols_to_norm:
+         if col in df_norm.columns:
+             mean = stats.get(f"{col}_mean")
+             std = stats.get(f"{col}_std")
+             if mean is not None and std is not None:
+                  df_norm[f"{col}_norm"] = (df_norm[col] - mean) / std
+             else:
+                  logger.warning(f"No se encontraron mean/std para '{col}' al normalizar datos. Columna '{col}_norm' será 0.0.")
+                  if f"{col}_norm" not in df_norm.columns: df_norm[f"{col}_norm"] = 0.0
+
+    if 'rsi' in df_norm.columns and stats.get("rsi_norm_method") == "minus_50_div_50":
+         df_norm['rsi_norm'] = (df_norm['rsi'] - 50.0) / 50.0
+    elif 'rsi_norm' not in df_norm.columns and 'rsi_window' in features_config:
+         logger.warning("Columna 'rsi_norm' no generada para validación.")
+         df_norm['rsi_norm'] = 0.0
+
+    initial_rows = len(df_norm)
+    df_norm = df_norm.dropna() # Eliminar NaNs post-normalización
+    dropped_rows = initial_rows - len(df_norm)
+    if dropped_rows > 0: 
+        logger.info(f"{dropped_rows} filas eliminadas de datos por NaNs post-normalización.")
+    
+    return df_norm
+
 def load_data():
     """Carga y procesa los datos de entrenamiento y validación."""
     global df_train, df_val, processor
@@ -55,46 +95,22 @@ def load_data():
         val_years = config['rl_params']['validation_years']
 
         logger.info(f"Cargando y procesando datos de entrenamiento ({train_years})...")
+        # df_train se normaliza y sus stats se guardan en processor.norm_stats
         df_train = processor.get_data_for_years(train_years, normalize=True)
 
         logger.info(f"Cargando y procesando datos de validación ({val_years})...")
+        # df_val se carga sin normalizar
         df_val_raw = processor.get_data_for_years(val_years, normalize=False)
 
-        logger.info("Aplicando estadísticas de normalización de TRAIN a VALIDATION...")
-        stats = processor.norm_stats
-        if not stats:
-             logger.warning("No se encontraron estadísticas de normalización (norm_stats). La validación podría no estar normalizada correctamente.")
-             df_val = df_val_raw.copy()
-        else:
-            cols_to_norm = config['features'].get('cols_to_normalize', [])
-            momentum_cols = [f'momentum_{w}' for w in config['features'].get('momentum_windows', [])]
-            all_cols_to_norm = cols_to_norm + momentum_cols
-            df_val = df_val_raw.copy()
+        # Aplicar stats de train a val
+        df_val = apply_train_stats_to_df(df_val_raw, processor.norm_stats, config)
 
-            for col in all_cols_to_norm:
-                 if col in df_val.columns:
-                     mean = stats.get(f"{col}_mean")
-                     std = stats.get(f"{col}_std")
-                     if mean is not None and std is not None:
-                          df_val[f"{col}_norm"] = (df_val[col] - mean) / std
-                     else:
-                          logger.warning(f"No se encontraron mean/std para '{col}' al normalizar datos de validación. Columna '{col}_norm' podría faltar o ser incorrecta.")
-                          if f"{col}_norm" not in df_val.columns: df_val[f"{col}_norm"] = 0.0
-
-            if 'rsi' in df_val.columns and stats.get("rsi_norm_method") == "minus_50_div_50":
-                 df_val['rsi_norm'] = (df_val['rsi'] - 50.0) / 50.0
-            elif 'rsi_norm' not in df_val.columns and 'rsi_window' in config['features']:
-                 logger.warning("Columna 'rsi_norm' no generada para validación.")
-                 df_val['rsi_norm'] = 0.0
-
-            initial_val_rows = len(df_val)
-            df_val = df_val.dropna()
-            dropped_val_rows = initial_val_rows - len(df_val)
-            if dropped_val_rows > 0: logger.info(f"{dropped_val_rows} filas eliminadas de los datos de validación por NaNs post-normalización.")
+        if df_train.empty or df_val.empty:
+            raise DataError("Los datos de entrenamiento o validación están vacíos después del procesamiento.")
 
         logger.info("Datos de entrenamiento y validación listos.")
 
-    except DataError as e: # Ahora 'DataError' está definido
+    except DataError as e:
         logger.critical(f"Fallo al cargar/procesar datos CSV: {e}", exc_info=False)
         if processor: processor.shutdown()
         sys.exit(1)
@@ -144,38 +160,41 @@ def objective(trial: optuna.Trial) -> float:
     # 3. Entrenar
     optimization_timesteps = config['rl_params'].get('optimization_timesteps', 500000)
     try:
-        model.learn(total_timesteps=optimization_timesteps, tb_log_name=f"trial_{trial.number}")
+        # El agente ahora se entrena usando model.learn
+        agent.model.learn(total_timesteps=optimization_timesteps, tb_log_name=f"trial_{trial.number}")
     except Exception as e:
         logger.error(f"Trial {trial.number} falló durante el entrenamiento: {e}", exc_info=True)
         return -np.inf # Indicar fallo a Optuna
 
-    # 4. Evaluar en el Entorno de Validación
+    # 4. Evaluar en el Entorno de Validación usando NUESTRO BACKTESTER
     logger.info(f"Evaluando Trial {trial.number} en datos de validación...")
     if df_val.empty:
         logger.error("df_val está vacío en 'objective'. No se puede evaluar.")
-        # Podríamos devolver 0 o un valor malo. -inf indica fallo.
         return -np.inf
 
     try:
-        val_env = TradingEnv(df_val, config)
-    except ValueError as e:
-        logger.error(f"Error al crear TradingEnv para validación en Trial {trial.number}: {e}")
-        return -np.inf
+        # ¡¡CAMBIO!! Usar run_portfolio_backtest en lugar de evaluate_policy
+        # Pasamos el DataFrame de validación y el agente ya entrenado
+        backtest_results = run_portfolio_backtest(df_val, agent, config)
+        
+        stats = backtest_results['stats']
+        
+        # Métrica objetivo para Optuna (queremos maximizar Sharpe)
+        metric_to_optimize = stats.get("sharpe", -10.0) 
+        # Podrías cambiar a 'sortino' o 'final_equity'
+        
+        logger.info(f"Trial {trial.number}: Sharpe={stats['sharpe']:.4f}, Sortino={stats['sortino']:.4f}, MaxDD={stats['max_drawdown']:.2%}, Return={stats['total_return']:.2%}")
 
-    try:
-        mean_reward, std_reward = evaluate_policy(model, val_env, n_eval_episodes=1, deterministic=True)
-        logger.info(f"Trial {trial.number}: Mean Reward={mean_reward:.4f} +/- {std_reward:.4f}")
-
-        if np.isnan(mean_reward) or np.isinf(mean_reward):
-             logger.warning(f"Trial {trial.number} resultó en recompensa inválida ({mean_reward}). Devolviendo -inf.")
+        if np.isnan(metric_to_optimize) or np.isinf(metric_to_optimize):
+             logger.warning(f"Trial {trial.number} resultó en métrica inválida ({metric_to_optimize}). Devolviendo -inf.")
              return -np.inf
 
     except Exception as e:
-        logger.error(f"Error durante la evaluación en Trial {trial.number}: {e}", exc_info=True)
+        logger.error(f"Error durante la evaluación (backtest) en Trial {trial.number}: {e}", exc_info=True)
         return -np.inf
 
     # 5. Reportar métrica a Optuna
-    return mean_reward
+    return metric_to_optimize
 
 def main():
     global processor # Para acceder al procesador en 'finally'
@@ -195,12 +214,12 @@ def main():
             study_name=study_name,
             storage=storage_name,
             load_if_exists=True,
-            direction="maximize"
+            direction="maximize" # Maximizar Sharpe/Sortino
         )
 
         try:
             # Ejecutar optimización
-            study.optimize(objective, n_trials=n_trials, timeout=None) # Sin límite de tiempo
+            study.optimize(objective, n_trials=n_trials, timeout=None)
         except KeyboardInterrupt:
             logger.warning("Optimización interrumpida por el usuario.")
         except Exception as e:
@@ -219,7 +238,7 @@ def main():
 
         best_trial = study.best_trial
         logger.info(f"Mejor Trial: {best_trial.number}")
-        logger.info(f"  Valor (Mean Reward): {best_trial.value:.4f}")
+        logger.info(f"  Valor (Métrica Optimizada): {best_trial.value:.4f}")
         logger.info("  Mejores Hiperparámetros:")
         for key, value in best_trial.params.items():
             logger.info(f"    {key}: {value}")
@@ -233,9 +252,10 @@ def main():
             logger.error("Los DataFrames de entrenamiento o validación están vacíos. No se puede reentrenar.")
             return
 
+        # Combinar train + val para el entrenamiento final
         df_final_train = pd.concat([df_train, df_val]).sort_index()
         df_final_train = df_final_train[~df_final_train.index.duplicated(keep='first')]
-        df_final_train = df_final_train.dropna() # Asegurar limpieza final
+        df_final_train = df_final_train.dropna() 
 
         if df_final_train.empty:
             logger.error("El DataFrame combinado para el entrenamiento final está vacío después de dropna().")
@@ -252,13 +272,37 @@ def main():
         final_agent = RLAgent(config)
 
         try:
+            # Crear el modelo con los mejores HP
             final_agent.create_model(final_env, best_hyperparameters)
+            
+            # Entrenar el modelo final
             final_training_timesteps = config['rl_params'].get('total_timesteps', 5000000)
             final_agent.train(final_env, total_timesteps=final_training_timesteps)
 
             logger.info("--- MODELO FINAL ENTRENADO Y GUARDADO ---")
             logger.info(f"Modelo guardado en: {config['rl_params']['model_save_path']}")
             logger.info(f"Estadísticas de normalización (usadas) guardadas en: {config['rl_params']['norm_stats_path']}")
+
+            # --- Ejecutar backtest final sobre los datos de TEST (si existen) ---
+            test_years = config['rl_params'].get('test_years', [])
+            if test_years:
+                logger.info(f"\n--- EJECUTANDO BACKTEST FINAL EN DATOS DE TEST ({test_years}) ---")
+                df_test_raw = processor.get_data_for_years(test_years, normalize=False)
+                df_test_norm = apply_train_stats_to_df(df_test_raw, processor.norm_stats, config)
+                
+                if df_test_norm.empty:
+                     logger.error("Datos de test vacíos después de procesar. No se puede ejecutar backtest final.")
+                else:
+                    test_results = run_portfolio_backtest(df_test_norm, final_agent, config)
+                    logger.info("--- RESULTADOS DEL BACKTEST DE TEST (Out-of-Sample) ---")
+                    logger.info(f"Sharpe: {test_results['stats']['sharpe']:.4f}")
+                    logger.info(f"Sortino: {test_results['stats']['sortino']:.4f}")
+                    logger.info(f"Max Drawdown: {test_results['stats']['max_drawdown']:.2%}")
+                    logger.info(f"Total Return: {test_results['stats']['total_return']:.2%}")
+                    logger.info(f"Final Equity: ${test_results['stats']['final_equity']:,.2f}")
+                    # Guardar curva de equity
+                    test_results['equity_curve'].to_csv("final_backtest_equity_curve.csv")
+                    logger.info("Curva de equity del backtest final guardada en 'final_backtest_equity_curve.csv'")
 
         except Exception as e:
             logger.critical(f"Fallo durante el reentrenamiento final: {e}", exc_info=True)

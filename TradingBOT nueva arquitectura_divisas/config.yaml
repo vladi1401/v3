@@ -4,9 +4,9 @@
 
 # Credenciales (NO ALMACENAR AQUÍ - USAR VARIABLES DE ENTORNO)
 mt5_credentials:
-  default_login: null
-  default_pass: null
-  default_server: null
+  default_login: 1511879566
+  default_pass: E97xsv?Q
+  default_server: FTMO-Demo
 
 # Configuración del Bot y Mercado
 trading:
@@ -16,12 +16,21 @@ trading:
   pip_value: 0.0001 # Valor de 1 pip para EURUSD
   mt5_timeframe: 1 # Corresponde a TIMEFRAME_M1 (en minutos)
 
-# Gestión de Riesgo
+# Gestión de Riesgo (NIVEL OPERACIÓN)
 risk_management:
   risk_per_trade_percent: 0.5 # % del equity a arriesgar
   atr_period_sl_tp: 14       # Período ATR para SL/TP
   sl_atr_multiplier: 2.0     # SL = PrecioEntrada -/+ (2.0 * ATR)
   tp_atr_multiplier: 4.0     # TP = PrecioEntrada +/- (4.0 * ATR)
+
+# Gestión de Riesgo (NIVEL CUENTA DE FONDEO)
+funding_challenge_firewall:
+  # Límite de Pérdida Diaria (5% del balance inicial)
+  daily_loss_limit_percent: 5.0
+  # Límite de Pérdida Máxima (10% Trailing desde el High-Water Mark del Equity)
+  max_drawdown_limit_percent: 10.0
+  # "Colchón" de seguridad. El bot se detiene al 8% de DD, no al 10%.
+  drawdown_cushion_percent: 2.0
 
 # Configuración del Entorno y Agente de RL
 rl_params:
@@ -31,7 +40,8 @@ rl_params:
   slippage_pips: 0.2
   reward_type: "sharpe"
   sharpe_risk_free_rate: 0.0
-  reward_history_window: 252
+  # AJUSTE CRÍTICO: 5 días de trading (5 * 24 * 60)
+  reward_history_window: 7200
 
   # Configuración de Datos y Entrenamiento
   training_years: [2020, 2021, 2022]
