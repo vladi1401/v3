@@ -1,17 +1,47 @@
 # pyrobot/broker.py
 
-import pandas as pd
-import MetaTrader5 as mt5
-from datetime import datetime, timezone, timedelta
-import numpy as np
-import math
-from forex_python.converter import CurrencyRates
-import holidays
-from typing import List, Dict, Union, Tuple, Optional
-from currency_converter import CurrencyConverter
-import time
 import logging
-import talib as ta
+import math
+import time
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Optional, Tuple, Union
+
+try:
+    import pandas as pd
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
+    pd = None  # type: ignore
+    PANDAS_IMPORT_ERROR = exc
+else:
+    PANDAS_IMPORT_ERROR = None
+
+try:
+    import MetaTrader5 as mt5
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
+    mt5 = None  # type: ignore
+    MT5_IMPORT_ERROR = exc
+else:
+    MT5_IMPORT_ERROR = None
+
+try:
+    from forex_python.converter import CurrencyRates
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
+    CurrencyRates = None  # type: ignore
+    FOREX_IMPORT_ERROR = exc
+else:
+    FOREX_IMPORT_ERROR = None
+
+try:
+    import holidays
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    holidays = None  # type: ignore
+
+try:
+    import talib as ta
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
+    ta = None  # type: ignore
+    TALIB_IMPORT_ERROR = exc
+else:
+    TALIB_IMPORT_ERROR = None
 
 from .utils import ensure_connection
 from .exceptions import ConnectionError, OrderError, DataError
@@ -29,8 +59,23 @@ class PyRobot:
         self.sl_atr_mult = sl_atr_mult
         self.tp_atr_mult = tp_atr_mult
         self.pip_value = pip_value
+        missing_dependencies = []
+        if mt5 is None:
+            missing_dependencies.append("MetaTrader5")
+        if pd is None:
+            missing_dependencies.append("pandas")
+        if ta is None:
+            missing_dependencies.append("TA-Lib")
+        if CurrencyRates is None:
+            missing_dependencies.append("forex-python")
+
+        if missing_dependencies:
+            details = ", ".join(missing_dependencies)
+            raise ConnectionError(
+                f"No se pueden inicializar los componentes del broker: faltan dependencias {details}."
+            )
+
         self.cr = CurrencyRates()
-        self.cc = CurrencyConverter()
         self.logger = logging.getLogger(__name__)
 
     # --- Funciones de Conexión ---
@@ -56,7 +101,8 @@ class PyRobot:
     @property
     @ensure_connection
     def market_open(self) -> bool:
-        current_time = datetime.now(timezone.utc); us_holidays = holidays.US()
+        current_time = datetime.now(timezone.utc)
+        us_holidays = holidays.US() if holidays is not None else ()
         if current_time.date() not in us_holidays:
             weekday = current_time.weekday(); hour = current_time.hour
             if weekday == 4 and hour >= 22: return False
@@ -68,7 +114,8 @@ class PyRobot:
     @property
     @ensure_connection
     def liquidity_hours(self) -> bool:
-        current_utc_hour = datetime.now(timezone.utc).hour; return 3 <= current_utc_hour < 22
+        current_utc_hour = datetime.now(timezone.utc).hour
+        return 3 <= current_utc_hour < 22
 
     @ensure_connection
     def get_account_info(self):
@@ -121,12 +168,29 @@ class PyRobot:
                 raise DataError(f"Datos insuficientes para calcular ATR({self.atr_period}) en {ticker}")
             df = pd.DataFrame(rates)
             df[['high', 'low', 'close']] = df[['high', 'low', 'close']].apply(pd.to_numeric)
-            atr_values = ta.ATR(df['high'], df['low'], df['close'], timeperiod=self.atr_period)
+
+            if ta is not None:
+                atr_values = ta.ATR(df['high'], df['low'], df['close'], timeperiod=self.atr_period)
+            else:
+                true_range = pd.DataFrame({
+                    'hl': df['high'] - df['low'],
+                    'hc': (df['high'] - df['close'].shift()).abs(),
+                    'lc': (df['low'] - df['close'].shift()).abs(),
+                }).max(axis=1)
+                atr_values = true_range.rolling(self.atr_period, min_periods=self.atr_period).mean()
+
             if atr_values.empty:
                 raise DataError(f"Cálculo de ATR devolvió vacío para {ticker}")
-            atr_value = atr_values.iloc[-1]
-            if atr_value is None or np.isnan(atr_value) or atr_value <= 0:
-                 raise DataError(f"Valor ATR inválido ({atr_value}) calculado para {ticker}")
+
+            atr_value_raw = atr_values.iloc[-1]
+            try:
+                atr_value = float(atr_value_raw)
+            except (TypeError, ValueError):
+                raise DataError(f"Valor ATR no numérico ({atr_value_raw}) calculado para {ticker}")
+
+            if math.isnan(atr_value) or atr_value <= 0:
+                raise DataError(f"Valor ATR inválido ({atr_value}) calculado para {ticker}")
+
             return atr_value
         except Exception as e:
             self.logger.error(f"Error al obtener ATR para {ticker}: {e}")
