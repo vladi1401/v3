@@ -2,12 +2,13 @@
 
 import sys
 import os
-import yaml
 import logging
 import pandas as pd
 import numpy as np
 import warnings
 import optuna
+
+from pyrobot.config_loader import load_config
 # DEPRECADO: from stable_baselines3.common.evaluation import evaluate_policy
 from typing import Dict, Any
 
@@ -36,8 +37,7 @@ warnings.filterwarnings('ignore') # Opcional
 
 # --- Cargar Config ---
 try:
-    with open(os.path.join(dir_path, 'config.yaml'), 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f)
+    config = load_config(os.path.join(dir_path, 'config.yaml'))
     logger.info("Configuración 'config.yaml' cargada.")
 except Exception as e:
     logger.critical(f"Error al leer 'config.yaml': {e}", exc_info=True)

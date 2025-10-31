@@ -1,26 +1,63 @@
 # download_data.py
 
 import os
-import yaml
 import logging
-import MetaTrader5 as mt5
-import pandas as pd
-from datetime import datetime
-import pytz
+from datetime import datetime, timezone
+
+try:
+    import pandas as pd
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
+    pd = None  # type: ignore
+    PANDAS_IMPORT_ERROR = exc
+else:
+    PANDAS_IMPORT_ERROR = None
+
+
+try:
+    import MetaTrader5 as mt5
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
+    mt5 = None  # type: ignore
+    MT5_IMPORT_ERROR = exc
+else:
+    MT5_IMPORT_ERROR = None
+
+from pyrobot.config_loader import load_config
 
 # --- Configuración de Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # --- Constantes ---
-TIMEZONE = pytz.utc
+TIMEZONE = timezone.utc
 
-def connect_mt5():
-    """Conecta a MT5 usando variables de entorno."""
+def connect_mt5() -> bool:
+    """Conecta a MT5 usando variables de entorno.
+
+    Devuelve ``False`` si la librería requerida no está disponible o si hay
+    un problema con las credenciales cargadas desde las variables de entorno.
+    """
+
+    if mt5 is None:
+        logger.critical(
+            "MetaTrader5 no está instalado. Instala la librería oficial "
+            "'MetaTrader5' para poder conectarte al terminal."
+        )
+        if MT5_IMPORT_ERROR:
+            logger.debug("Detalle del error de importación: %s", MT5_IMPORT_ERROR)
+        return False
+
+    if pd is None:
+        logger.critical(
+            "Pandas no está instalado. Instala 'pandas' para poder manipular los datos descargados."
+        )
+        if PANDAS_IMPORT_ERROR:
+            logger.debug("Detalle del error de importación: %s", PANDAS_IMPORT_ERROR)
+        return False
+
     try:
-        login = int(os.environ['1511879566'])
-        password = os.environ['E97xsv?Q']
-        server = os.environ['FTMO-Demo']
+        login = int(os.environ['MT5_LOGIN'])
+        password = os.environ['MT5_PASS']
+        server = os.environ['MT5_SERVER']
     except KeyError as e:
         logger.critical(f"¡ERROR DE CREDENCIALES! Variable de entorno no encontrada: {e}")
         logger.critical("Por favor, configura MT5_LOGIN, MT5_PASS, y MT5_SERVER.")
@@ -42,7 +79,11 @@ def connect_mt5():
 
 def download_data_for_year(year: int, ticker: str, interval_mt5, save_path: str):
     """Descarga los datos de un año completo y los guarda en CSV."""
-    
+
+    if mt5 is None or pd is None:
+        logger.error("No se puede descargar datos porque faltan dependencias críticas (MetaTrader5 o pandas).")
+        return
+
     logger.info(f"Descargando datos para {ticker} - {year}...")
     
     # Definir el rango de fechas
@@ -82,8 +123,9 @@ def main():
     
     # 1. Cargar Config
     try:
-        with open('config.yaml', 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        config_path = os.path.join(script_dir, 'config.yaml')
+        config = load_config(config_path)
         logger.info("Configuración 'config.yaml' cargada.")
     except Exception as e:
         logger.critical(f"Error al leer 'config.yaml': {e}", exc_info=True)
@@ -127,7 +169,8 @@ def main():
         download_data_for_year(year, ticker, interval_mt5, save_path)
 
     # 6. Desconectar
-    mt5.shutdown()
+    if mt5 is not None:
+        mt5.shutdown()
     logger.info("--- Descarga de Datos Completada ---")
 
 if __name__ == "__main__":

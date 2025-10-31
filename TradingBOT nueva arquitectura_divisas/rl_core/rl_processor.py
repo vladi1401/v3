@@ -1,13 +1,34 @@
 # download_data.py
 
 import os
+import sys
 import logging
-import pandas as pd
-import MetaTrader5 as mt5
-import pytz
-from datetime import datetime
+from pathlib import Path
+
+try:
+    import pandas as pd
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
+    pd = None  # type: ignore
+    PANDAS_IMPORT_ERROR = exc
+else:
+    PANDAS_IMPORT_ERROR = None
+from datetime import datetime, timezone
 from typing import List
-import yaml
+
+try:
+    import MetaTrader5 as mt5
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
+    mt5 = None  # type: ignore
+    MT5_IMPORT_ERROR = exc
+else:
+    MT5_IMPORT_ERROR = None
+
+BASE_DIR = Path(__file__).resolve().parent
+PARENT_DIR = BASE_DIR.parent
+if str(PARENT_DIR) not in sys.path:
+    sys.path.append(str(PARENT_DIR))
+
+from pyrobot.config_loader import load_config
 
 # --- Configuración de Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -15,33 +36,49 @@ logger = logging.getLogger(__name__)
 
 # --- Parámetros de Descarga (Leídos desde config.yaml) ---
 try:
-    with open('config.yaml', 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f)
-    
+    config_path = PARENT_DIR / 'config.yaml'
+    config = load_config(config_path)
+
     TICKER = config['trading']['ticker']
     TIMEFRAME_STR = config['trading']['interval_str']
-    TIMEFRAME_MT5 = getattr(mt5, config['trading']['interval_mt5'])
+    TIMEFRAME_NAME = config['trading']['interval_mt5']
     OUTPUT_DIR = config['rl_params']['csv_data_path']
-    
+
     # Combinar todos los años necesarios
     YEARS_TO_DOWNLOAD = sorted(list(set(
         config['rl_params']['training_years'] +
         config['rl_params']['validation_years'] +
         config['rl_params']['test_years']
     )))
-    
+
     logger.info(f"Configuración cargada. Se descargará: {TICKER} ({TIMEFRAME_STR})")
     logger.info(f"Años: {YEARS_TO_DOWNLOAD}")
     logger.info(f"Directorio de salida: {OUTPUT_DIR}")
 
 except Exception as e:
     logger.critical(f"Error al leer 'config.yaml': {e}")
-    exit()
+    raise SystemExit(1)
 
 # ---------------------------------------------------------
 
 def connect_mt5():
     """Conecta a MT5 usando variables de entorno."""
+    if mt5 is None:
+        logger.critical(
+            "MetaTrader5 no está instalado. Instala la librería oficial 'MetaTrader5' para continuar."
+        )
+        if MT5_IMPORT_ERROR:
+            logger.debug("Detalle del error de importación: %s", MT5_IMPORT_ERROR)
+        return False
+
+    if pd is None:
+        logger.critical(
+            "Pandas no está instalado. Instala 'pandas' para poder procesar los datos descargados."
+        )
+        if PANDAS_IMPORT_ERROR:
+            logger.debug("Detalle del error de importación: %s", PANDAS_IMPORT_ERROR)
+        return False
+
     try:
         login = int(os.environ['MT5_LOGIN'])
         password = os.environ['MT5_PASS']
@@ -69,19 +106,23 @@ def connect_mt5():
 
 def download_data(ticker: str, timeframe_mt5, timeframe_str: str, years: List[int], output_dir: str):
     """Descarga los datos y los guarda en el formato CSV requerido."""
-    
+
+    if mt5 is None or pd is None:
+        logger.error("No se puede descargar datos porque faltan dependencias críticas (MetaTrader5 o pandas).")
+        return
+
     # Asegurarse de que el directorio de salida existe
     os.makedirs(output_dir, exist_ok=True)
     
     # Definir la zona horaria UTC para MT5
-    timezone = pytz.timezone("Etc/UTC")
+    utc_tz = timezone.utc
 
     for year in years:
         logger.info(f"--- Procesando año: {year} ---")
         
         # Definir el rango de fechas para el año completo
-        date_from = datetime(year, 1, 1, tzinfo=timezone)
-        date_to = datetime(year + 1, 1, 1, tzinfo=timezone) # Hasta el inicio del próximo año
+        date_from = datetime(year, 1, 1, tzinfo=utc_tz)
+        date_to = datetime(year + 1, 1, 1, tzinfo=utc_tz) # Hasta el inicio del próximo año
 
         try:
             # Obtener los datos
@@ -126,16 +167,30 @@ def download_data(ticker: str, timeframe_mt5, timeframe_str: str, years: List[in
             logger.error(f"Error al procesar el año {year}: {e}", exc_info=True)
 
 def main():
-    if connect_mt5():
-        download_data(
-            ticker=TICKER,
-            timeframe_mt5=TIMEFRAME_MT5,
-            timeframe_str=TIMEFRAME_STR,
-            years=YEARS_TO_DOWNLOAD,
-            output_dir=OUTPUT_DIR
+    if not connect_mt5():
+        return
+
+    try:
+        timeframe_mt5 = getattr(mt5, TIMEFRAME_NAME)
+    except AttributeError:
+        logger.critical(
+            f"El timeframe '{TIMEFRAME_NAME}' no existe en la librería MetaTrader5."
         )
+        if mt5 is not None:
+            mt5.shutdown()
+        return
+
+    download_data(
+        ticker=TICKER,
+        timeframe_mt5=timeframe_mt5,
+        timeframe_str=TIMEFRAME_STR,
+        years=YEARS_TO_DOWNLOAD,
+        output_dir=OUTPUT_DIR
+    )
+
+    if mt5 is not None:
         mt5.shutdown()
-        logger.info("Descarga completada. Conexión MT5 cerrada.")
+    logger.info("Descarga completada. Conexión MT5 cerrada.")
 
 if __name__ == "__main__":
     main()

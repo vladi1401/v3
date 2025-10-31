@@ -3,7 +3,6 @@
 import sys
 import os
 import time
-import yaml
 import logging
 import numpy as np
 import pandas as pd
@@ -451,8 +450,8 @@ class LiveBot:
 
 if __name__ == "__main__":
     try:
-        with open(os.path.join(dir_path, 'config.yaml'), 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
+        from pyrobot.config_loader import load_config
+        config = load_config(os.path.join(dir_path, 'config.yaml'))
     except Exception as e:
         logging.basicConfig()
         logging.critical(f"Error fatal al leer 'config.yaml': {e}", exc_info=True)

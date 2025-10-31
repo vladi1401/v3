@@ -2,7 +2,6 @@
 
 import logging
 import time
-import MetaTrader5 as mt5
 from logging.handlers import RotatingFileHandler
 from functools import wraps
 # Asegúrate de que este import sea relativo si utils.py está en el mismo directorio que exceptions.py
