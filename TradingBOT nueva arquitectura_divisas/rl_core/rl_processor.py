@@ -1,196 +1,164 @@
-# download_data.py
+# rl_core/rl_processor.py
 
-import os
-import sys
+import pandas as pd
+import numpy as np
+# import MetaTrader5 as mt5 # No necesario para leer CSV
+# from datetime import datetime # No necesario para leer CSV
+# import pytz # No necesario para leer CSV
 import logging
-from pathlib import Path
+import json
+import os
+from typing import Dict, Any, List
 
-try:
-    import pandas as pd
-except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
-    pd = None  # type: ignore
-    PANDAS_IMPORT_ERROR = exc
-else:
-    PANDAS_IMPORT_ERROR = None
-from datetime import datetime, timezone
-from typing import List
+# from pyrobot.broker import PyRobot # No necesario para leer CSV
+from pyrobot.exceptions import ConnectionError, DataError # DataError sí se usa
+from .feature_calculator import calculate_features
 
-try:
-    import MetaTrader5 as mt5
-except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
-    mt5 = None  # type: ignore
-    MT5_IMPORT_ERROR = exc
-else:
-    MT5_IMPORT_ERROR = None
+class RLProcessor:
+    """
+    Maneja la carga, procesamiento y normalización de datos históricos
+    para el entrenamiento y validación del agente de RL DESDE ARCHIVOS CSV.
+    """
+    def __init__(self, config: Dict[str, Any]):
+        self.logger = logging.getLogger(__name__)
+        self.config = config
+        self.config_trade = config['trading']
+        self.config_features = config['features']
+        self.config_rl = config['rl_params']
 
-BASE_DIR = Path(__file__).resolve().parent
-PARENT_DIR = BASE_DIR.parent
-if str(PARENT_DIR) not in sys.path:
-    sys.path.append(str(PARENT_DIR))
+        self.ticker = self.config_trade['ticker']
+        # self.interval_mt5 = getattr(mt5, self.config_trade['interval_mt5']) # No necesario
+        # self.timezone = pytz.utc # No necesario
 
-from pyrobot.config_loader import load_config
+        self.norm_stats = {} # Almacenará la media y std
+        self.stats_path = self.config_rl['norm_stats_path']
+        self.csv_data_path = self.config_rl.get('csv_data_path', 'csv_data') # Carga la ruta
 
-# --- Configuración de Logging ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+        self.logger.info(f"RLProcessor inicializado. Cargando datos desde: {self.csv_data_path}")
+        if not os.path.isdir(self.csv_data_path):
+             self.logger.warning(f"La carpeta especificada en csv_data_path ('{self.csv_data_path}') no existe o no es un directorio.")
 
-# --- Parámetros de Descarga (Leídos desde config.yaml) ---
-try:
-    config_path = PARENT_DIR / 'config.yaml'
-    config = load_config(config_path)
+    def get_data_for_years(self, years: List[int], normalize: bool = True) -> pd.DataFrame:
+        """
+        Carga datos desde archivos CSV para los años especificados, calcula features
+        y (opcionalmente) normaliza los datos.
+        """
+        all_dfs = []
+        interval_str = self.config_trade.get('interval_str', 'M1') # Ej: "M1"
+        ticker_from_config = self.config_trade.get('ticker', 'EURUSD')
 
-    TICKER = config['trading']['ticker']
-    TIMEFRAME_STR = config['trading']['interval_str']
-    TIMEFRAME_NAME = config['trading']['interval_mt5']
-    OUTPUT_DIR = config['rl_params']['csv_data_path']
+        for year in years:
+            try:
+                # Nombre de archivo esperado (ajustado en la respuesta anterior)
+                file_name = f"DAT_ASCII_{ticker_from_config}_{interval_str}_{year}.csv"
+                file_path = os.path.join(self.csv_data_path, file_name)
 
-    # Combinar todos los años necesarios
-    YEARS_TO_DOWNLOAD = sorted(list(set(
-        config['rl_params']['training_years'] +
-        config['rl_params']['validation_years'] +
-        config['rl_params']['test_years']
-    )))
+                self.logger.info(f"Cargando datos locales desde: {file_path}...")
 
-    logger.info(f"Configuración cargada. Se descargará: {TICKER} ({TIMEFRAME_STR})")
-    logger.info(f"Años: {YEARS_TO_DOWNLOAD}")
-    logger.info(f"Directorio de salida: {OUTPUT_DIR}")
+                if not os.path.exists(file_path):
+                    self.logger.warning(f"No se encontró el archivo: {file_path}. Saltando año {year}.")
+                    continue
 
-except Exception as e:
-    logger.critical(f"Error al leer 'config.yaml': {e}")
-    raise SystemExit(1)
+                # --- INICIO DE LA CORRECCIÓN ---
+                # Asumimos formato estándar de exportación MT5 sin encabezado:
+                # Columnas: ['date', 'time_str', 'open', 'high', 'low', 'close', 'volume']
 
-# ---------------------------------------------------------
+                # (Si tu archivo tiene un formato diferente, ej. solo 6 columnas sin volumen, ajusta esta lista)
+                col_names = ['date', 'time_str', 'open', 'high', 'low', 'close', 'volume']
 
-def connect_mt5():
-    """Conecta a MT5 usando variables de entorno."""
-    if mt5 is None:
-        logger.critical(
-            "MetaTrader5 no está instalado. Instala la librería oficial 'MetaTrader5' para continuar."
-        )
-        if MT5_IMPORT_ERROR:
-            logger.debug("Detalle del error de importación: %s", MT5_IMPORT_ERROR)
-        return False
+                df_year = pd.read_csv(
+                    file_path,
+                    header=None,        # <-- Indica que NO hay encabezado
+                    names=col_names,    # <-- Asigna estos nombres a las columnas
+                    usecols=['date', 'time_str', 'open', 'high', 'low', 'close'], # <-- Solo carga estas
+                    delimiter=','       # <-- Asegura el delimitador (normalmente coma)
+                )
 
-    if pd is None:
-        logger.critical(
-            "Pandas no está instalado. Instala 'pandas' para poder procesar los datos descargados."
-        )
-        if PANDAS_IMPORT_ERROR:
-            logger.debug("Detalle del error de importación: %s", PANDAS_IMPORT_ERROR)
-        return False
+                # Combinar 'date' y 'time_str' en la columna 'time' que el script espera
+                # Asumiendo formato de fecha 'YYYY.MM.DD' y hora 'HH:MM'
+                try:
+                    df_year['time'] = pd.to_datetime(df_year['date'] + ' ' + df_year['time_str'], format='%Y.%m.%d %H:%M')
+                except ValueError:
+                    # Intenta otro formato común si el primero falla (ej. YYYY-MM-DD HH:MM:SS)
+                    self.logger.warning(f"Formato de fecha YYYY.MM.DD HH:MM falló para {file_path}. Intentando formato genérico.")
+                    df_year['time'] = pd.to_datetime(df_year['date'] + ' ' + df_year['time_str'])
 
-    try:
-        login = int(os.environ['MT5_LOGIN'])
-        password = os.environ['MT5_PASS']
-        server = os.environ['MT5_SERVER']
-        logger.info(f"Conectando a {server} con login {login}...")
-    except KeyError as e:
-        logger.critical(f"¡ERROR! Variable de entorno no encontrada: {e}")
-        logger.critical("Por favor, configura MT5_LOGIN, MT5_PASS, y MT5_SERVER.")
-        return False
-    except (ValueError, TypeError):
-        logger.critical("¡ERROR! MT5_LOGIN debe ser un número entero.")
-        return False
+                df_year = df_year.set_index('time')
+                df_year = df_year.drop(columns=['date', 'time_str']) # Eliminar columnas temporales
 
-    if not mt5.initialize():
-        logger.critical(f"mt5.initialize() falló. Código: {mt5.last_error()}")
-        return False
-    
-    if not mt5.login(login, password, server):
-        logger.critical(f"mt5.login() falló. Código: {mt5.last_error()}")
-        mt5.shutdown()
-        return False
-    
-    logger.info("Conexión MT5 establecida.")
-    return True
+                # --- FIN DE LA CORRECCIÓN ---
 
-def download_data(ticker: str, timeframe_mt5, timeframe_str: str, years: List[int], output_dir: str):
-    """Descarga los datos y los guarda en el formato CSV requerido."""
+                # Validar columnas necesarias (OHLC)
+                required_cols = ['open', 'high', 'low', 'close']
+                if not all(col in df_year.columns for col in required_cols):
+                     missing = [col for col in required_cols if col not in df_year.columns]
+                     self.logger.error(f"Columnas requeridas {missing} no encontradas en {file_path} después de procesar. Saltando.")
+                     continue
 
-    if mt5 is None or pd is None:
-        logger.error("No se puede descargar datos porque faltan dependencias críticas (MetaTrader5 o pandas).")
-        return
+                # Seleccionar y reordenar por si acaso
+                df_year = df_year[required_cols]
 
-    # Asegurarse de que el directorio de salida existe
-    os.makedirs(output_dir, exist_ok=True)
-    
-    # Definir la zona horaria UTC para MT5
-    utc_tz = timezone.utc
+                all_dfs.append(df_year)
 
-    for year in years:
-        logger.info(f"--- Procesando año: {year} ---")
-        
-        # Definir el rango de fechas para el año completo
-        date_from = datetime(year, 1, 1, tzinfo=utc_tz)
-        date_to = datetime(year + 1, 1, 1, tzinfo=utc_tz) # Hasta el inicio del próximo año
+            except Exception as e:
+                self.logger.error(f"Error cargando o procesando el archivo para el año {year} ({file_path}): {e}", exc_info=True)
 
-        try:
-            # Obtener los datos
-            rates = mt5.copy_rates_range(ticker, timeframe_mt5, date_from, date_to)
-            
-            if rates is None or len(rates) == 0:
-                logger.warning(f"No se obtuvieron datos para {ticker} en {year}.")
-                continue
-                
-            logger.info(f"Se obtuvieron {len(rates)} velas para {year}.")
+        if not all_dfs:
+            example_file_name = f"DAT_ASCII_{ticker_from_config}_{interval_str}_{years[0]}.csv" # Corregido ACSII a ASCII
+            raise DataError(f"No se pudieron cargar datos CSV válidos para ningún año en la lista: {years}. Verifica la ruta '{self.csv_data_path}' y que los archivos existan con el formato esperado (Ej: '{example_file_name}') y contengan las columnas correctas (sin encabezado).")
 
-            # Convertir a DataFrame
-            df = pd.DataFrame(rates)
-            
-            # --- FORMATEO CRÍTICO ---
-            # El rl_processor.py espera columnas 'date' (YYYY.MM.DD) y 'time_str' (HH:MM)
-            
-            # 1. Convertir timestamp a datetime
-            df['time_dt'] = pd.to_datetime(df['time'], unit='s', utc=True)
-            
-            # 2. Crear las columnas de texto separadas
-            df['date'] = df['time_dt'].dt.strftime('%Y.%m.%d')
-            df['time_str'] = df['time_dt'].dt.strftime('%H:%M')
-            
-            # 3. Renombrar volumen
-            df = df.rename(columns={'tick_volume': 'volume'})
-            
-            # 4. Seleccionar y ordenar las columnas FINALES
-            df_out = df[['date', 'time_str', 'open', 'high', 'low', 'close', 'volume']]
-            
-            # 5. Definir el nombre del archivo de salida
-            # (Usamos DAT_ASCII_ para coincidir con la corrección anterior)
-            file_name = f"DAT_ASCII_{ticker}_{timeframe_str}_{year}.csv"
-            file_path = os.path.join(output_dir, file_name)
+        df_full = pd.concat(all_dfs).sort_index()
+        df_full = df_full[~df_full.index.duplicated(keep='first')]
 
-            # 6. Guardar sin encabezado y sin índice
-            df_out.to_csv(file_path, header=False, index=False)
-            
-            logger.info(f"Año {year} guardado exitosamente en: {file_path}")
+        self.logger.info(f"Datos CSV cargados. Total velas: {len(df_full)}. Calculando características...")
 
-        except Exception as e:
-            logger.error(f"Error al procesar el año {year}: {e}", exc_info=True)
+        # 1. Calcular características
+        df_processed = calculate_features(df_full, self.config_features)
 
-def main():
-    if not connect_mt5():
-        return
+        # 2. Limpiar NaNs
+        initial_rows = len(df_processed)
+        df_processed = df_processed.dropna()
+        dropped_rows = initial_rows - len(df_processed)
+        self.logger.info(f"Características calculadas. {dropped_rows} filas eliminadas por NaNs. Velas restantes: {len(df_processed)}")
 
-    try:
-        timeframe_mt5 = getattr(mt5, TIMEFRAME_NAME)
-    except AttributeError:
-        logger.critical(
-            f"El timeframe '{TIMEFRAME_NAME}' no existe en la librería MetaTrader5."
-        )
-        if mt5 is not None:
-            mt5.shutdown()
-        return
+        if df_processed.empty:
+            raise DataError("El DataFrame quedó vacío después de calcular features y dropna. Revisa los datos de entrada o los periodos de los indicadores.")
 
-    download_data(
-        ticker=TICKER,
-        timeframe_mt5=timeframe_mt5,
-        timeframe_str=TIMEFRAME_STR,
-        years=YEARS_TO_DOWNLOAD,
-        output_dir=OUTPUT_DIR
-    )
+        # 3. Normalizar
+        if normalize:
+            self.logger.info("Calculando y guardando estadísticas de normalización...")
+            self.norm_stats = {}
 
-    if mt5 is not None:
-        mt5.shutdown()
-    logger.info("Descarga completada. Conexión MT5 cerrada.")
+            cols_to_norm = self.config_features.get('cols_to_normalize', [])
+            momentum_cols = [f'momentum_{w}' for w in self.config_features.get('momentum_windows', [])]
+            all_cols_to_norm = cols_to_norm + momentum_cols
 
-if __name__ == "__main__":
-    main()
+            for col in all_cols_to_norm:
+                if col in df_processed.columns:
+                    mean = df_processed[col].mean()
+                    std = df_processed[col].std()
+                    if pd.isna(std) or std < 1e-9:
+                        std = 1e-9
+                        self.logger.warning(f"Std dev para '{col}' es casi cero o NaN. Usando 1e-9.")
+                    self.norm_stats[f"{col}_mean"] = mean
+                    self.norm_stats[f"{col}_std"] = std
+                    df_processed[f"{col}_norm"] = (df_processed[col] - mean) / std
+                else:
+                    self.logger.warning(f"Columna '{col}' definida para normalizar no se encontró en el DataFrame.")
+
+            if 'rsi' in df_processed.columns:
+                df_processed['rsi_norm'] = (df_processed['rsi'] - 50.0) / 50.0
+                self.norm_stats["rsi_norm_method"] = "minus_50_div_50"
+
+            try:
+                with open(self.stats_path, 'w') as f:
+                    json.dump(self.norm_stats, f, indent=4)
+                self.logger.info(f"Estadísticas de normalización guardadas en {self.stats_path}")
+            except Exception as e:
+                self.logger.error(f"No se pudo guardar {self.stats_path}: {e}")
+
+        return df_processed
+
+    def shutdown(self):
+        """Función vacía (ya no hay conexión MT5 que cerrar)."""
+        self.logger.info("RLProcessor (modo CSV) finalizado.")

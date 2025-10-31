@@ -1,177 +1,185 @@
-# download_data.py
+# download_data.py (Usando la biblioteca 'duka' - CORREGIDO v3)
 
 import os
 import logging
-from datetime import datetime, timezone
+import pandas as pd
+# import MetaTrader5 as mt5 # No necesario
+import pytz
+from datetime import datetime
+from typing import List
+import yaml
 
+# --- Importar la biblioteca duka ---
 try:
-    import pandas as pd
-except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
-    pd = None  # type: ignore
-    PANDAS_IMPORT_ERROR = exc
-else:
-    PANDAS_IMPORT_ERROR = None
-
-
-try:
-    import MetaTrader5 as mt5
-except ModuleNotFoundError as exc:  # pragma: no cover - depends on environment
-    mt5 = None  # type: ignore
-    MT5_IMPORT_ERROR = exc
-else:
-    MT5_IMPORT_ERROR = None
-
-from pyrobot.config_loader import load_config
+    import duka.main as duka # Importar la función principal de la biblioteca
+except ImportError:
+    print("*"*60)
+    print("ERROR: La biblioteca 'duka' no está instalada.")
+    print("Por favor, instálala ejecutando: pip install duka")
+    print("*"*60)
+    exit()
+# ------------------------------------
 
 # --- Configuración de Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Constantes ---
-TIMEZONE = timezone.utc
+# --- Parámetros (Leídos desde config.yaml) ---
+try:
+    with open('config.yaml', 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
 
-def connect_mt5() -> bool:
-    """Conecta a MT5 usando variables de entorno.
+    TICKER = config['trading']['ticker'].upper() # Asegurar mayúsculas
+    TIMEFRAME_STR = config['trading']['interval_str'] # M1, H1 etc.
+    OUTPUT_DIR = config['rl_params']['csv_data_path'] # Carpeta csv_data
 
-    Devuelve ``False`` si la librería requerida no está disponible o si hay
-    un problema con las credenciales cargadas desde las variables de entorno.
-    """
+    # Combinar todos los años necesarios
+    YEARS_TO_DOWNLOAD = sorted(list(set(
+        config['rl_params']['training_years'] +
+        config['rl_params']['validation_years'] +
+        config['rl_params']['test_years']
+    )))
 
-    if mt5 is None:
-        logger.critical(
-            "MetaTrader5 no está instalado. Instala la librería oficial "
-            "'MetaTrader5' para poder conectarte al terminal."
-        )
-        if MT5_IMPORT_ERROR:
-            logger.debug("Detalle del error de importación: %s", MT5_IMPORT_ERROR)
-        return False
+    logger.info(f"Configuración cargada. Se descargará: {TICKER} ({TIMEFRAME_STR}) usando 'duka'")
+    logger.info(f"Años: {YEARS_TO_DOWNLOAD}")
+    logger.info(f"Directorio de salida: {OUTPUT_DIR}")
 
-    if pd is None:
-        logger.critical(
-            "Pandas no está instalado. Instala 'pandas' para poder manipular los datos descargados."
-        )
-        if PANDAS_IMPORT_ERROR:
-            logger.debug("Detalle del error de importación: %s", PANDAS_IMPORT_ERROR)
-        return False
+except Exception as e:
+    logger.critical(f"Error al leer 'config.yaml': {e}")
+    exit()
 
+# ---------------------------------------------------------
+
+# Mapeo de timeframe para 'duka'
+DUKA_TIMEFRAME = TIMEFRAME_STR.lower() # Convertir 'M1' a 'm1'
+
+# Directorio temporal donde 'duka' descargará los datos inicialmente
+DUKA_CACHE_DIR = "duka_cache"
+
+def format_downloaded_csv(duka_csv_path: str, output_filepath: str, year: int):
+    """Lee el CSV descargado por 'duka' y lo guarda en el formato para rl_processor.py."""
     try:
-        login = int(os.environ['MT5_LOGIN'])
-        password = os.environ['MT5_PASS']
-        server = os.environ['MT5_SERVER']
-    except KeyError as e:
-        logger.critical(f"¡ERROR DE CREDENCIALES! Variable de entorno no encontrada: {e}")
-        logger.critical("Por favor, configura MT5_LOGIN, MT5_PASS, y MT5_SERVER.")
-        return False
-    except (ValueError, TypeError):
-        logger.critical("¡ERROR! MT5_LOGIN debe ser un número entero.")
-        return False
+        logger.info(f"Formateando archivo: {duka_csv_path}")
 
-    if not mt5.initialize():
-        logger.error(f"mt5.initialize() falló. Código: {mt5.last_error()}")
-        return False
-        
-    if not mt5.login(login, password, server):
-        logger.error(f"mt5.login() falló. Código: {mt5.last_error()}. Revisa credenciales.")
-        return False
-        
-    logger.info(f"Conexión MT5 establecida para login {login}.")
-    return True
+        df = pd.read_csv(
+            duka_csv_path,
+            parse_dates=['time'],
+            index_col='time'
+        )
 
-def download_data_for_year(year: int, ticker: str, interval_mt5, save_path: str):
-    """Descarga los datos de un año completo y los guarda en CSV."""
+        df.rename(columns={
+            'open': 'open', 'high': 'high', 'low': 'low',
+            'close': 'close', 'volume': 'volume'
+        }, inplace=True, errors='ignore')
 
-    if mt5 is None or pd is None:
-        logger.error("No se puede descargar datos porque faltan dependencias críticas (MetaTrader5 o pandas).")
-        return
+        if df is None or df.empty:
+            logger.warning(f"El archivo {duka_csv_path} está vacío o no se pudo leer.")
+            return False
 
-    logger.info(f"Descargando datos para {ticker} - {year}...")
-    
-    # Definir el rango de fechas
-    date_from = datetime(year, 1, 1, tzinfo=TIMEZONE)
-    date_to = datetime(year + 1, 1, 1, tzinfo=TIMEZONE) # Hasta el 1 de Enero del siguiente año
-    
-    try:
-        # Descargar los datos
-        rates = mt5.copy_rates_range(ticker, interval_mt5, date_from, date_to)
-        
-        if rates is None or len(rates) == 0:
-            logger.warning(f"No se recibieron datos para {ticker} en {year}. Código: {mt5.last_error()}")
-            return
+        logger.info(f"Se leyeron {len(df)} velas del archivo descargado.")
 
-        # Convertir a DataFrame
-        df = pd.DataFrame(rates)
-        
-        # --- FORMATEO CRÍTICO ---
-        # 1. Convertir la columna 'time' de timestamp a datetime
-        df['time'] = pd.to_datetime(df['time'], unit='s')
-        
-        # 2. Seleccionar solo las columnas que rl_processor.py necesita
-        # (El script original espera 'time', 'open', 'high', 'low', 'close')
-        df_save = df[['time', 'open', 'high', 'low', 'close']]
-        
-        # 3. Guardar en CSV CON encabezado e SIN índice
-        # Esto crea un archivo con "time,open,high,low,close" en la primera línea
-        df_save.to_csv(save_path, index=False)
-        
-        logger.info(f"¡Éxito! Datos de {year} guardados en {save_path} ({len(df_save)} velas)")
+        # --- FORMATEO CRÍTICO para rl_processor.py ---
+        df_out = pd.DataFrame()
+
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index, utc=True)
+        elif df.index.tz is None:
+             df.index = df.index.tz_localize('UTC')
+        else:
+             df.index = df.index.tz_convert('UTC')
+
+        df_out['date'] = df.index.strftime('%Y.%m.%d')
+        df_out['time_str'] = df.index.strftime('%H:%M')
+
+        required_cols_in = ['open', 'high', 'low', 'close']
+        if not all(col in df.columns for col in required_cols_in):
+            logger.error(f"Columnas OHLC faltantes en {duka_csv_path}. Columnas: {df.columns.tolist()}")
+            return False
+
+        df_out['open'] = df['open']
+        df_out['high'] = df['high']
+        df_out['low'] = df['low']
+        df_out['close'] = df['close']
+        df_out['volume'] = df.get('volume', 0.0)
+
+        df_out.to_csv(output_filepath, header=False, index=False, float_format='%.5f')
+
+        logger.info(f"Año {year} formateado y guardado exitosamente en: {output_filepath}")
+        return True
 
     except Exception as e:
-        logger.error(f"Error al descargar datos para {year}: {e}", exc_info=True)
+        logger.error(f"Error al formatear el archivo {duka_csv_path}: {e}", exc_info=True)
+        return False
 
 def main():
-    logger.info("--- Iniciando Script de Descarga de Datos ---")
-    
-    # 1. Cargar Config
-    try:
-        script_dir = os.path.dirname(os.path.realpath(__file__))
-        config_path = os.path.join(script_dir, 'config.yaml')
-        config = load_config(config_path)
-        logger.info("Configuración 'config.yaml' cargada.")
-    except Exception as e:
-        logger.critical(f"Error al leer 'config.yaml': {e}", exc_info=True)
-        return
+    logger.info("--- Iniciando Script de Descarga de Datos (usando 'duka') ---")
 
-    config_trade = config['trading']
-    config_rl = config['rl_params']
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(DUKA_CACHE_DIR, exist_ok=True)
 
-    # 2. Conectar a MT5
-    if not connect_mt5():
-        return
-        
-    # 3. Preparar parámetros
-    ticker = config_trade['ticker']
-    interval_str = config_trade['interval_str']
-    interval_mt5 = getattr(mt5, config_trade['interval_mt5'])
-    csv_dir = config_rl.get('csv_data_path', 'csv_data')
-    
-    # Crear carpeta 'csv_data' si no existe
-    os.makedirs(csv_dir, exist_ok=True)
-    
-    # 4. Obtener todos los años necesarios
-    years_to_download = sorted(list(set(
-        config_rl.get('training_years', []) +
-        config_rl.get('validation_years', []) +
-        config_rl.get('test_years', [])
-    )))
-    
-    if not years_to_download:
-        logger.warning("No hay años definidos en 'training_years', 'validation_years', o 'test_years' en config.yaml.")
-        return
+    processed_count = 0
+    for year in YEARS_TO_DOWNLOAD:
+        logger.info(f"--- Procesando año: {year} ---")
 
-    logger.info(f"Años a descargar: {years_to_download}")
+        start_date = datetime(year, 1, 1)
+        end_date = datetime(year, 12, 31)
 
-    # 5. Iterar y descargar
-    for year in years_to_download:
-        # Crear el nombre de archivo que rl_processor.py espera
-        file_name = f"{ticker}_{interval_str}_{year}.csv"
-        save_path = os.path.join(csv_dir, file_name)
-        
-        download_data_for_year(year, ticker, interval_mt5, save_path)
+        try:
+            logger.info(f"Llamando a duka.main para descargar {TICKER} ({DUKA_TIMEFRAME}) para {year}...")
 
-    # 6. Desconectar
-    if mt5 is not None:
-        mt5.shutdown()
-    logger.info("--- Descarga de Datos Completada ---")
+            # --- INICIO DE LA CORRECCIÓN ---
+            # Usar los nombres de argumento correctos: 'start' y 'end'
+            duka.main(
+                TICKER,
+                start=start_date,     # <-- CORREGIDO
+                end=end_date,       # <-- CORREGIDO
+                timeframe=DUKA_TIMEFRAME,
+                folder=DUKA_CACHE_DIR,
+                header=True
+            )
+            # --- FIN DE LA CORRECCIÓN ---
+
+            logger.info(f"Descarga de 'duka' para {year} completada (o ya existía en caché).")
+
+            # --- Encontrar el archivo CSV descargado por duka ---
+            start_str = start_date.strftime('%Y_%m_%d')
+            end_str = end_date.strftime('%Y_%m_%d')
+            expected_duka_filename = f"{TICKER}_{DUKA_TIMEFRAME}_{start_str}_{end_str}.csv"
+            duka_csv_path = os.path.join(DUKA_CACHE_DIR, TICKER, DUKA_TIMEFRAME, expected_duka_filename)
+
+            if not os.path.exists(duka_csv_path):
+                logger.error(f"No se encontró el archivo CSV esperado descargado por duka: {duka_csv_path}")
+                found = False
+                search_dir = os.path.join(DUKA_CACHE_DIR, TICKER, DUKA_TIMEFRAME)
+                if os.path.isdir(search_dir):
+                    for fname in os.listdir(search_dir):
+                        if TICKER in fname and DUKA_TIMEFRAME in fname and str(year) in fname and fname.endswith('.csv'):
+                             duka_csv_path = os.path.join(search_dir, fname)
+                             logger.info(f"Encontrado archivo alternativo: {duka_csv_path}")
+                             found = True
+                             break
+                if not found:
+                    logger.error(f"No se encontró ningún archivo CSV de duka para {year} en {search_dir}")
+                    continue
+
+            # --- Formatear el archivo encontrado ---
+            output_filename = f"DAT_ASCII_{TICKER}_{TIMEFRAME_STR}_{year}.csv"
+            output_filepath = os.path.join(OUTPUT_DIR, output_filename)
+
+            if format_downloaded_csv(duka_csv_path, output_filepath, year):
+                processed_count += 1
+
+        except Exception as e:
+            logger.error(f"Error al descargar o procesar el año {year} con 'duka': {e}", exc_info=True)
+
+
+    if processed_count == len(YEARS_TO_DOWNLOAD):
+        logger.info(f"--- Descarga ('duka') y Formateo Completados ({processed_count} años) ---")
+    elif processed_count > 0:
+         logger.warning(f"--- Descarga ('duka') y Formateo Parcial ({processed_count}/{len(YEARS_TO_DOWNLOAD)} años completados) ---")
+    else:
+        logger.error("--- Falló la Descarga ('duka') y/o Formateo para todos los años. Revisa los logs. ---")
+
 
 if __name__ == "__main__":
     main()
